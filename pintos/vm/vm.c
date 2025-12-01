@@ -4,7 +4,8 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 
-#include "hash.h"
+#include <hash.h>
+#include <vaddr.h>
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -63,20 +64,35 @@ err:
 }
 
 /* Find VA from spt and return page. On error, return NULL. */
-struct page *
-spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
+struct page *spt_find_page (struct supplemental_page_table *spt, void *va) {
 	struct page *page = NULL;
 	/* TODO: Fill this function. */
+	struct hash *hash = &spt->hash_table;
+	if (hash == NULL)
+		return NULL;
 
-	return page;
+	page->va = pg_round_down(va);
+
+	struct hash_elem *he = hash_find(&spt->hash_table, &page->hash_elem);
+	if (he == NULL)
+		return NULL;
+
+	struct page *find_page = hash_entry(he, struct page, hash_elem);
+
+	return find_page;
 }
 
 /* Insert PAGE into spt with validation. */
-bool
-spt_insert_page (struct supplemental_page_table *spt UNUSED,
-		struct page *page UNUSED) {
+bool spt_insert_page (struct supplemental_page_table *spt, struct page *page) {
 	int succ = false;
 	/* TODO: Fill this function. */
+	struct hash_elem *he = hash_insert(&spt->hash_table, &page->hash_elem);
+
+	// NULL이 성공이란다..
+	if (he == NULL) {
+		succ = true;
+		return succ;
+	}
 
 	return succ;
 }
