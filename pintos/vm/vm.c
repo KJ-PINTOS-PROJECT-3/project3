@@ -62,19 +62,39 @@ err:
 
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
-spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
-	struct page *page = NULL;
+spt_find_page (struct supplemental_page_table *spt, void *va) {
+	struct page 		tmp;
+	struct page			*page;
+	struct hash_elem	*res;
 	/* TODO: Fill this function. */
 
+	if (!spt || !va)
+		return NULL;
+	
+	// dummy 구조체 선언
+	tmp.va = va;
+	lock_acquire(&(spt->hash_lock));
+	res = hash_find(&(spt->hash_table), &(tmp.elem));
+	lock_release(&(spt->hash_lock));
+	if (!res)
+		return NULL;
+	page = hash_entry(res, struct page, elem);
 	return page;
 }
 
 /* Insert PAGE into spt with validation. */
 bool
-spt_insert_page (struct supplemental_page_table *spt UNUSED,
-		struct page *page UNUSED) {
+spt_insert_page (struct supplemental_page_table *spt,
+		struct page *page) {
+	struct hash_elem	*e;
 	int succ = false;
 	/* TODO: Fill this function. */
+	lock_acquire(&(spt->hash_lock));
+	e = hash_replace(&(spt->hash_table), &(page->elem));
+	lock_release(&(spt->hash_lock));
+	
+	if (e != &(page->elem))
+		succ = true;
 
 	return succ;
 }
@@ -173,18 +193,87 @@ vm_do_claim_page (struct page *page) {
 
 /* Initialize new supplemental page table */
 void
-supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_init (struct supplemental_page_table *spt) {
+	if (!spt)
+		return ;
+	
+	hash_init(&(spt->hash_table), page_hash_func, va_less_func, NULL);
+	lock_init(&(spt->hash_lock));
 }
 
 /* Copy supplemental page table from src to dst */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
+supplemental_page_table_copy (struct supplemental_page_table *dst,
+		struct supplemental_page_table *src) {
+	// iterator 하나 만들어서 순회 -> 하나 원소 하나 복사 (page 할당 -> hash 선언)
+	// hash_init되어 들어옴 
+	
+	struct hash_iterator	i;
+	struct hash_elem		*e;
+	struct page				*src_page;
+	struct page				*dst_page;
+
+
+	lock_acquire(&(src->hash_lock));
+	lock_acquire(&(dst->hash_lock));
+	hash_first(&i, &(src->hash_table));
+	while (hash_next (&i))
+	{
+		e = hash_cur(&i);
+		src_page = hash_entry(e, struct page, elem);
+		dst_page = (struct page *)malloc(sizeof(struct page));
+		if (!dst_page)
+		{
+			supplemental_page_table_kill(&(dst->hash_table));
+			lock_release(&(src->hash_lock));
+			lock_release(&(dst->hash_lock));
+			return false;
+		}
+		memcpy(src_page, dst_page, sizeof(struct page));
+		hash_insert(&(dst->hash_table), &(dst_page->elem));
+	}
+	lock_release(&(src->hash_lock));
+	lock_release(&(dst->hash_lock));
+	return false;
 }
 
 /* Free the resource hold by the supplemental page table */
 void
-supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	lock_acquire(&(spt->hash_lock));
+	hash_destroy(&(spt->hash_table), page_destroy_func);
+	lock_release(&(spt->hash_lock));
+}
+
+/*	HASH FUNCTION : for spt, page 대상	*/
+uint64_t page_hash_func (const struct hash_elem *e, void *aux UNUSED)
+{
+	struct page	*curPage = hash_entry(e, struct page, elem);
+	return hash_bytes(curPage->va, sizeof(curPage->va));
+}
+
+bool va_less_func (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED)
+{
+	struct page	*aPage = hash_entry(a, struct page, elem);
+	struct page	*bPage = hash_entry(b, struct page, elem);
+	return (uint64_t)aPage->va < (uint64_t)bPage->va;
+}
+
+void page_destroy_func (struct hash_elem *e, void *aux UNUSED)
+{
+	struct page	*tmp;
+
+	if (!e)
+		return ;
+	
+	// page가 동적으로 할당된다고 가정하에 작성
+	tmp = hash_entry(e, struct page, elem);
+
+	// 스왑영역에 올라간 경우 해당 스왑 영역 청소
+	// file -> write back 허용인 경우 file에 쓰기
+	// 해당 영역의 frame이 있는 경우 frame 할당 해제 
+
+	free (tmp);
 }

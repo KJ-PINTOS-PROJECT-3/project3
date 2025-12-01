@@ -27,6 +27,7 @@ enum vm_type {
 #include "vm/uninit.h"
 #include "vm/anon.h"
 #include "vm/file.h"
+#include "hash.h"
 #ifdef EFILESYS
 #include "filesys/page_cache.h"
 #endif
@@ -40,21 +41,22 @@ struct thread;
  * This is kind of "parent class", which has four "child class"es, which are
  * uninit_page, file_page, anon_page, and page cache (project4).
  * DO NOT REMOVE/MODIFY PREDEFINED MEMBER OF THIS STRUCTURE. */
-struct page {
-	const struct page_operations *operations;
-	void *va;              /* Address in terms of user space */
-	struct frame *frame;   /* Back reference for frame */
+struct 								page {
+	const struct page_operations	*operations;
+	void 							*va;	/* Address in terms of user space */
+	struct frame 					*frame;	/* Back reference for frame */
 
 	/* Your implementation */
+	struct hash_elem				elem;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
 	union {
-		struct uninit_page uninit;
-		struct anon_page anon;
-		struct file_page file;
+		struct uninit_page 			uninit;
+		struct anon_page 			anon;
+		struct file_page 			file;
 #ifdef EFILESYS
-		struct page_cache page_cache;
+		struct page_cache			page_cache;
 #endif
 	};
 };
@@ -84,7 +86,10 @@ struct page_operations {
 /* Representation of current process's memory space.
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
+
 struct supplemental_page_table {
+	struct hash	hash_table;
+	struct lock	hash_lock;
 };
 
 #include "threads/thread.h"
@@ -108,5 +113,9 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
+
+uint64_t page_hash_func (const struct hash_elem *e, void *aux UNUSED);
+bool va_less_func (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED);
+void page_destroy_func (struct hash_elem *e, void *aux UNUSED);
 
 #endif  /* VM_VM_H */
