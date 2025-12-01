@@ -9,6 +9,8 @@
 #include "../debug.h"
 #include "threads/malloc.h"
 
+#include "vm.h"
+
 #define list_elem_to_hash_elem(LIST_ELEM)                       \
 	list_entry(LIST_ELEM, struct hash_elem, list_elem)
 
@@ -36,6 +38,19 @@ hash_init (struct hash *h,
 		return true;
 	} else
 		return false;
+}
+
+uint64_t page_hash (struct hash_elem *e, void *aux) {
+	struct page *p = hash_entry(e, struct page, hash_elem);
+
+	return hash_bytes(&p->va, sizeof(p->va));
+}
+
+bool page_less (const struct hash_elem *a, const struct hash_elem *b, void *aux) {
+	struct page *pa = hash_entry(a, struct page, hash_elem);
+	struct page *pb = hash_entry(b, struct page, hash_elem);
+
+	return pa->va < pb->va ? true : false;
 }
 
 /* Removes all the elements from H.
