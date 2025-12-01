@@ -65,15 +65,15 @@ err:
 
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *spt_find_page (struct supplemental_page_table *spt, void *va) {
-	struct page *page = NULL;
+	struct page page;
 	/* TODO: Fill this function. */
 	struct hash *hash = &spt->hash_table;
 	if (hash == NULL)
 		return NULL;
 
-	page->va = pg_round_down(va);
+	page.va = pg_round_down(va);
 
-	struct hash_elem *he = hash_find(&spt->hash_table, &page->hash_elem);
+	struct hash_elem *he = hash_find(&spt->hash_table, &page.hash_elem);
 	if (he == NULL)
 		return NULL;
 
@@ -88,11 +88,8 @@ bool spt_insert_page (struct supplemental_page_table *spt, struct page *page) {
 	/* TODO: Fill this function. */
 	struct hash_elem *he = hash_insert(&spt->hash_table, &page->hash_elem);
 
-	// NULL이 성공이란다..
-	if (he == NULL) {
+	if (he == NULL)
 		succ = true;
-		return succ;
-	}
 
 	return succ;
 }
@@ -190,8 +187,7 @@ vm_do_claim_page (struct page *page) {
 }
 
 /* Initialize new supplemental page table */
-void
-supplemental_page_table_init (struct supplemental_page_table *spt) {
+void supplemental_page_table_init (struct supplemental_page_table *spt) {
 	// 새로운 프로세스가 시작할 때
 	// 프로세스가 fork될 때
 	if (spt == NULL) return;
