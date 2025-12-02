@@ -392,16 +392,3 @@ remove_elem (struct hash *h, struct hash_elem *e) {
 	list_remove (&e->list_elem);
 }
 
-
-
-
-/*	HASH FUNCTION : for spt, page 대상	*/
-uint64_t page_hash_func (const struct hash_elem *e, void *aux)
-{
-	struct page	*myPage = hash_entry(e, struct page, elem);
-	
-}
-
-typedef bool hash_less_func (const struct hash_elem *a,
-		const struct hash_elem *b,
-		void *aux);
