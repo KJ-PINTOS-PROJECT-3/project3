@@ -123,10 +123,18 @@ vm_evict_frame (void) {
  * and return it. This always return valid address. That is, if the user pool
  * memory is full, this function evicts the frame to get the available memory
  * space.*/
-static struct frame *
-vm_get_frame (void) {
+// 사용자용 물리 프레임을 하나 할당해라라는 거지
+static struct frame *vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
+	void *f_page = palloc_get_page(PAL_USER);
+	if (f_page == NULL) {
+		palloc_free_page(f_page);
+		PANIC("todo"); // 이거 맞음?
+	}
+
+	frame = malloc(sizeof(struct frame));
+	frame->kva = f_page;
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
