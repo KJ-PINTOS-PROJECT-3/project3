@@ -5,6 +5,7 @@
 #include "vm/inspect.h"
 #include "threads/vaddr.h"
 #include <hash.h>
+#include "threads/mmu.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -55,7 +56,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 
-	/* Check wheter the upage is already occupied or not. */
+	/* Check whether the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
@@ -76,7 +77,7 @@ spt_find_page (struct supplemental_page_table *spt, void *va) {
 	void *page_addr = pg_round_down(va);
 	dummy_page.va = page_addr;
 
-	struct hash_elem *target_elem = hash_find(&spt ->hs_table, &dummy_page.hs_elem);
+	struct hash_elem *target_elem = hash_find(&spt->hs_table, &dummy_page.hs_elem);
 	if(target_elem == NULL){
 		return NULL;
 	} 
@@ -131,10 +132,25 @@ vm_evict_frame (void) {
  * and return it. This always return valid address. That is, if the user pool
  * memory is full, this function evicts the frame to get the available memory
  * space.*/
+/**
+ * 사용자 풀에서 새 물리적 페이지를 가져오는 함수
+ * 
+ */
 static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
+	void *user_new_page = palloc_get_page(PAL_USER);
+	if(user_new_page == NULL){
+		PANIC("TODO Implement Frame Table");
+	}
+	frame = (struct frame *)malloc(sizeof(struct frame));
+	if(frame == NULL){
+		palloc_free_page(user_new_page);
+		return NULL;
+	}
+	frame->kva = user_new_page;
+	frame->page = NULL;
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
@@ -176,7 +192,8 @@ bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
-
+	struct thread *cur = thread_current();
+	page = spt_find_page(&cur -> spt, va);
 	return vm_do_claim_page (page);
 }
 
@@ -184,20 +201,33 @@ vm_claim_page (void *va UNUSED) {
 static bool
 vm_do_claim_page (struct page *page) {
 	struct frame *frame = vm_get_frame ();
+	struct thread *t = thread_current();
+	if(frame == NULL || page == NULL || !is_user_vaddr(page -> va)) return false;
 
 	/* Set links */
 	frame->page = page;
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	bool succ = false;
+
+	/* pml4 두 번 접근하는게 효율적인가? */
+	succ = (pml4_get_page(t->pml4, page->va) == NULL) && 
+	(pml4_set_page(t->pml4, page->va, frame->kva, page->writable));
+	
+	if(succ == false) return succ;
+	/* 프레임을 해제하는 헬퍼 함수가 있으면 좋을듯 */
+
 	return swap_in (page, frame->kva);
 }
 
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt) {
+	if(spt == NULL) return;
 	/* 해시 함수로 다시 구현 */
-	hash_init(&spt->hs_table, page_hash, page_less, NULL);
+	if(!hash_init(&spt->hs_table, page_hash, page_less, NULL))
+		PANIC("spt initialize failed");
 }
 
 /* Copy supplemental page table from src to dst */

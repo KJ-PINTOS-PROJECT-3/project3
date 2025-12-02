@@ -48,6 +48,7 @@ struct page {
 
 	/* Your implementation */
 	struct hash_elem hs_elem;
+	bool writable;			/* 쓰기 가능 여부 나타내는 필드(다른 비트와 결합해서 쓸 예정)*/
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
