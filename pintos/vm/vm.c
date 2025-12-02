@@ -6,6 +6,7 @@
 
 #include <hash.h>
 #include <vaddr.h>
+#include <mmu.h>
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -129,7 +130,6 @@ static struct frame *vm_get_frame (void) {
 	/* TODO: Fill this function. */
 	void *f_page = palloc_get_page(PAL_USER);
 	if (f_page == NULL) {
-		palloc_free_page(f_page);
 		PANIC("todo"); // 이거 맞음?
 	}
 
@@ -181,8 +181,7 @@ vm_claim_page (void *va UNUSED) {
 }
 
 /* Claim the PAGE and set up the mmu. */
-static bool
-vm_do_claim_page (struct page *page) {
+static bool vm_do_claim_page (struct page *page) {
 	struct frame *frame = vm_get_frame ();
 
 	/* Set links */
@@ -190,6 +189,9 @@ vm_do_claim_page (struct page *page) {
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	// 페이지의 가상주소를 프레임의 물리주소에 매핑 -> 페이지 테이블 항목을 삽입해야함
+	struct thread *cur = thread_current();
+	pml4_set_page(cur->pml4, page->va, frame->kva, page->writable);
 
 	return swap_in (page, frame->kva);
 }
