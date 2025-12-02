@@ -172,10 +172,15 @@ vm_dealloc_page (struct page *page) {
 }
 
 /* Claim the page that allocate on VA. */
-bool
-vm_claim_page (void *va UNUSED) {
+// 가상주소에 할당된 페이지를 요청
+bool vm_claim_page (void *va) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
+	struct thread *cur = thread_current();
+
+	page = spt_find_page(cur->spt, va);
+	if(page == NULL)
+		return false;
 
 	return vm_do_claim_page (page);
 }
