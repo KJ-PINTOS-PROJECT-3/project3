@@ -69,7 +69,6 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 		uninit_new(new_page, upage, init, type, aux, type_initializer);
 		new_page->writable = writable;
-		new_page->va = pg_round_down(upage);
 		
 		/* TODO: Insert the page into the spt. */
 		if (false == spt_insert_page(spt, new_page))
@@ -153,14 +152,26 @@ vm_evict_frame (void) {
  * space.*/
 static struct frame *
 vm_get_frame (void) {
-	struct frame *frame = NULL;
+	struct frame	*frame = NULL;
+	void			*kva = NULL;
 	/* TODO: Fill this function. */
 
-	frame = palloc_get_page(PAL_USER);
-	if (!frame)
+	frame = (struct frame *)calloc(1, sizeof(struct frame));
+	if (!frame)	//만약 에러나면 여기 의심해볼 것 
+		return NULL;
+	
+	kva = palloc_get_page(PAL_USER);
+	if (!kva)
+		kva = vm_evict_frame();	//실패하면 어떻게 처리..? 
+	if (!kva) //만약 에러나면 여기 의심해볼 것 
 	{
-		frame = vm_evict_frame();
+		free (frame);
+		return NULL;
 	}
+
+	frame->kva = kva;
+	frame->page = NULL;
+
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
 	return frame;
@@ -205,7 +216,6 @@ vm_claim_page (void *va) {
 	if (!va)
 		return false;
 	
-	//정렬은 spt_find_page에서 해준다고 가정하고 따로 하지 않음
 	page = spt_find_page(thread_current()->spt, va);
 	if (!page)
 		return false;
@@ -216,14 +226,26 @@ vm_claim_page (void *va) {
 /* Claim the PAGE and set up the mmu. */
 static bool
 vm_do_claim_page (struct page *page) {
-	struct frame *frame = vm_get_frame ();
+	struct frame	*frame = vm_get_frame ();
+	struct thread	*t = thread_current();
+	bool			result;
+
+	if (!page || !frame)
+		return false;
 
 	/* Set links */
 	frame->page = page;
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
-	pml4_set_page(thread_current()->pml4, page, frame, page->writable);
+	result = (pml4_get_page(t->pml4, page->va) == NULL) && (pml4_set_page(t->pml4, page->va, frame->kva, page->writable));
+
+	if (result == false)
+	{
+		palloc_free_page(frame->kva);
+		free (frame);
+		return false;
+	}
 
 	return swap_in (page, frame->kva);
 }
