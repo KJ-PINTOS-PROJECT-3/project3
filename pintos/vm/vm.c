@@ -55,27 +55,46 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 	ASSERT (VM_TYPE(type) != VM_UNINIT)
 
 	struct supplemental_page_table *spt = &thread_current ()->spt;
+	struct page *page = NULL;
 
 	/* Check whether the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
+		page = (struct page *)malloc(sizeof(struct page));
+		if(page == NULL) goto err;
 
+		switch (VM_TYPE(type))
+		{
+		case VM_ANON:
+			uninit_new(page, upage, init, type, aux, anon_initializer);
+			break;
+		case VM_FILE:
+			uninit_new(page, upage, init, type, aux, file_backed_initializer);
+			break;
+		default:
+			goto err;
+		}
+		page->writable = writable;
 		/* TODO: Insert the page into the spt. */
+		if(!(spt_insert_page(spt, page))){
+			goto err;
+		}
+		return true;
 	}
 err:
+	if(page != NULL) free(page);
 	return false;
 }
 
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
 spt_find_page (struct supplemental_page_table *spt, void *va) {
-	struct page *page = NULL;
 	/* TODO: Fill this function. */
+	struct page *page = NULL;
 	struct page dummy_page; 
-	void *page_addr = pg_round_down(va);
-	dummy_page.va = page_addr;
+	dummy_page.va = pg_round_down(va);
 
 	struct hash_elem *target_elem = hash_find(&spt->hs_table, &dummy_page.hs_elem);
 	if(target_elem == NULL){
@@ -139,7 +158,6 @@ vm_evict_frame (void) {
 static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
-	/* TODO: Fill this function. */
 	void *user_new_page = palloc_get_page(PAL_USER);
 	if(user_new_page == NULL){
 		PANIC("TODO Implement Frame Table");
@@ -169,12 +187,20 @@ vm_handle_wp (struct page *page UNUSED) {
 
 /* Return true on success */
 bool
-vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
-		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
+vm_try_handle_fault (struct intr_frame *f, void *addr, bool user, 
+	bool write, bool not_present) {
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
+	if(is_kernel_vaddr(addr) || addr == NULL) return false;
+
+	page = spt_find_page(spt, addr);
+	if(page == NULL) return false;
+
+	if(write && !page -> writable){
+		return false;
+	}
 
 	return vm_do_claim_page (page);
 }
@@ -187,9 +213,17 @@ vm_dealloc_page (struct page *page) {
 	free (page);
 }
 
+static void
+vm_dealloc_frame(struct frame *frame){
+	palloc_free_page(frame -> kva);
+	//list_remove(&frame->elem); // TODO: 프레임 리스트 구현 시 주석 해제(아직 구현 안됨)
+	free(frame);
+}
+
+
 /* Claim the page that allocate on VA. */
 bool
-vm_claim_page (void *va UNUSED) {
+vm_claim_page (void *va) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
 	struct thread *cur = thread_current();
@@ -211,14 +245,18 @@ vm_do_claim_page (struct page *page) {
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
 	bool succ = false;
 
-	/* pml4 두 번 접근하는게 효율적인가? */
-	succ = (pml4_get_page(t->pml4, page->va) == NULL) && 
-	(pml4_set_page(t->pml4, page->va, frame->kva, page->writable));
-	
-	if(succ == false) return succ;
-	/* 프레임을 해제하는 헬퍼 함수가 있으면 좋을듯 */
+	if(!pml4_set_page(t->pml4, page->va, frame->kva, page->writable)){
+		vm_dealloc_frame(frame);
+		return false;
+	}
 
-	return swap_in (page, frame->kva);
+	/* swap_in(uninit_initializer 실패 시 자원 회수)*/
+	if(swap_in(page, frame ->kva) == false){
+		pml4_clear_page(t-> pml4, page->va);
+		vm_dealloc_frame(frame);
+		return false; 
+	}
+	return true;
 }
 
 /* Initialize new supplemental page table */
