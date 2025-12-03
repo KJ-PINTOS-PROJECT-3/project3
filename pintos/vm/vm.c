@@ -243,7 +243,7 @@ vm_do_claim_page (struct page *page) {
 
 	/* swap_in(uninit_initializer 실패 시 자원 회수)*/
 	if(swap_in(page, frame ->kva) == false){
-		pml4_clear_page(t-> pml4, page->va);
+		pml4_clear_page(t->pml4, page->va);
 		vm_dealloc_frame(frame);
 		return false; 
 	}
