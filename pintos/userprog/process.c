@@ -23,7 +23,6 @@
 #include "userprog/gdt.h"
 #include "userprog/syscall.h"
 #include "userprog/tss.h"
-
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -33,6 +32,13 @@ struct fork_struct {
     struct intr_frame* if_;
     struct semaphore fork_sema;
     bool success;
+};
+
+struct aux_load{
+    struct file *elf_file;
+    off_t page_pos;
+    size_t page_read_bytes;
+    size_t page_zero_bytes;
 };
 
 static void process_cleanup(void);
@@ -378,7 +384,6 @@ static bool load(const char* file_name, int argc, char** argv, struct intr_frame
     t->pml4 = pml4_create();
     if (t->pml4 == NULL) goto done;
     process_activate(thread_current());
-
     /* Open executable file. */
     lock_acquire(&file_lock);
     file = filesys_open(file_name);
@@ -500,6 +505,33 @@ static bool validate_segment(const struct Phdr* phdr, struct file* file) {
     return true;
 }
 
+static void build_user_stack(struct intr_frame* if_, int argc, char** argv) {
+    char* uargv[argc];
+    for (int i = argc - 1; i >= 0; i--) {
+        int len = strlen(argv[i]) + 1;
+        uargv[i] = (if_->rsp -= len);
+        memcpy(if_->rsp, argv[i], len);
+    }
+
+    // paading
+    char* temp = if_->rsp;
+    if_->rsp &= ~0xF;
+    if (temp - if_->rsp > 0) memset(if_->rsp, 0, temp - if_->rsp);
+
+    // null
+    *(char**)(if_->rsp -= 8) = 0;
+
+    // argv pointer
+    if_->rsp -= argc * sizeof(char*);
+    memcpy((void*)if_->rsp, uargv, argc * sizeof(char*));
+
+    if_->R.rdi = argc;
+    if_->R.rsi = if_->rsp;
+
+    *(char**)(if_->rsp -= 8) = 0;
+}
+
+
 #ifndef VM
 /* Codes of this block will be ONLY USED DURING project 2.
  * If you want to implement the function for whole project 2, implement it
@@ -578,31 +610,7 @@ static bool setup_stack(struct intr_frame* if_) {
     return success;
 }
 
-static void build_user_stack(struct intr_frame* if_, int argc, char** argv) {
-    char* uargv[argc];
-    for (int i = argc - 1; i >= 0; i--) {
-        int len = strlen(argv[i]) + 1;
-        uargv[i] = (if_->rsp -= len);
-        memcpy(if_->rsp, argv[i], len);
-    }
 
-    // paading
-    char* temp = if_->rsp;
-    if_->rsp &= ~0xF;
-    if (temp - if_->rsp > 0) memset(if_->rsp, 0, temp - if_->rsp);
-
-    // null
-    *(char**)(if_->rsp -= 8) = 0;
-
-    // argv pointer
-    if_->rsp -= argc * sizeof(char*);
-    memcpy((void*)if_->rsp, uargv, argc * sizeof(char*));
-
-    if_->R.rdi = argc;
-    if_->R.rsi = if_->rsp;
-
-    *(char**)(if_->rsp -= 8) = 0;
-}
 
 /* Adds a mapping from user virtual address UPAGE to kernel
  * virtual address KPAGE to the page table.
@@ -630,6 +638,30 @@ static bool lazy_load_segment(struct page* page, void* aux) {
     /* TODO: Load the segment from the file */
     /* TODO: This called when the first page fault occurs on address VA. */
     /* TODO: VA is available when calling this function. */
+    if(page == NULL || aux == NULL) return false;
+    struct aux_load *af = (struct aux_load *) aux;
+
+    struct file *elf_file = af->elf_file;
+    off_t pos = af->page_pos;
+    size_t page_read_bytes = af->page_read_bytes;
+    size_t page_zero_bytes = af->page_zero_bytes;
+    
+    /* 선제적으로 free 처리(aux는 VM_ANON -> 로드 이후 더 이상 쓸 일이 없음) */
+    free(aux);
+
+    void *kpage = page->frame->kva;
+
+    /* file_seek 후 file_read시 그 사이 race condtion 발생 가능 -> read_at으로 변경*/
+    lock_acquire(&file_lock);
+    off_t bytes_read = file_read_at(elf_file, kpage, page_read_bytes, pos);
+    lock_release(&file_lock);
+
+    /* 해제의 책임은 상위 함수(vm_do_claim_page)로 위임하기 */
+    if (bytes_read != (off_t)page_read_bytes)
+        return false;
+
+    memset(kpage + page_read_bytes, 0, page_zero_bytes);
+    return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -651,6 +683,7 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
     ASSERT((read_bytes + zero_bytes) % PGSIZE == 0);
     ASSERT(pg_ofs(upage) == 0);
     ASSERT(ofs % PGSIZE == 0);
+    off_t page_offset = ofs;
 
     while (read_bytes > 0 || zero_bytes > 0) {
         /* Do calculate how to fill this page.
@@ -658,29 +691,44 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
          * and zero the final PAGE_ZERO_BYTES bytes. */
         size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
+        struct aux_load *aux_file = (struct aux_load *)malloc(sizeof(struct aux_load));
 
-        /* TODO: Set up aux to pass information to the lazy_load_segment. */
-        void* aux = NULL;
-        if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, aux))
+        /* TODO : malloc 실패 시 >> 이전 페이지까지의 malloc을 어떻게 처리할까? */
+        if (aux_file == NULL) return false;
+        aux_file->elf_file = file;
+        aux_file->page_pos = page_offset;
+        aux_file->page_read_bytes = page_read_bytes;
+        aux_file->page_zero_bytes = page_zero_bytes; 
+        
+        void* aux = aux_file;
+        if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, aux)){
+            free(aux_file);
             return false;
+        }
 
         /* Advance. */
         read_bytes -= page_read_bytes;
         zero_bytes -= page_zero_bytes;
         upage += PGSIZE;
+        page_offset += PGSIZE;
     }
     return true;
 }
-
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
 static bool setup_stack(struct intr_frame* if_) {
-    bool success = false;
     void* stack_bottom = (void*)(((uint8_t*)USER_STACK) - PGSIZE);
+    struct thread *cur = thread_current();
+    bool success = false;
 
-    /* TODO: Map the stack on stack_bottom and claim the page immediately.
-     * TODO: If success, set the rsp accordingly.
-     * TODO: You should mark the page is stack. */
-    /* TODO: Your code goes here */
+    if(vm_alloc_page(VM_ANON | VM_MARKER_STACK, stack_bottom, true) && vm_claim_page(stack_bottom)){
+       success = true;
+       if_->rsp = USER_STACK;
+    }
+
+    if(!success){
+        struct page *page = spt_find_page(&cur->spt, stack_bottom);
+        if(page != NULL) spt_remove_page(&cur->spt, page);
+    }
 
     return success;
 }
