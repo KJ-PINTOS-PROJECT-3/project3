@@ -5,8 +5,8 @@
 #include "vm/inspect.h"
 
 #include <hash.h>
-#include <vaddr.h>
-#include <mmu.h>
+#include <threads/vaddr.h>
+#include <threads/mmu.h>
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -146,7 +146,6 @@ vm_evict_frame (void) {
  * and return it. This always return valid address. That is, if the user pool
  * memory is full, this function evicts the frame to get the available memory
  * space.*/
-// 사용자용 물리 프레임을 하나 할당해라라는 거지
 static struct frame *vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
@@ -156,8 +155,14 @@ static struct frame *vm_get_frame (void) {
 	}
 
 	frame = malloc(sizeof(struct frame));
+	
+	if (frame == NULL) {
+		palloc_free_page(f_page);
+		return NULL;
+	}
 
 	frame->kva = f_page;
+	frame->page = NULL;
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
@@ -175,15 +180,22 @@ vm_handle_wp (struct page *page UNUSED) {
 }
 
 /* Return true on success */
-bool
-vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
-		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
-	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
+bool vm_try_handle_fault (struct intr_frame *f, void *addr, bool user, bool write, bool not_present) {
+	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
 
-	return vm_do_claim_page (page);
+	if (is_kernel_vaddr(addr) == false) {
+		page = spt_find_page(spt, addr);
+	
+		if (page == NULL)
+			return false;
+	
+		return vm_do_claim_page (page);
+	} else {
+		return false;
+	}
 }
 
 /* Free the page.
@@ -201,8 +213,7 @@ bool vm_claim_page (void *va) {
 	/* TODO: Fill this function */
 	struct thread *cur = thread_current();
 
-	page = spt_find_page(cur->spt, va);
-	// 위임을 핫ㅆ다..?
+	page = spt_find_page(&cur->spt, va);
 	if(page == NULL)
 		return false;
 
@@ -220,7 +231,9 @@ static bool vm_do_claim_page (struct page *page) {
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
 	// 페이지의 가상주소를 프레임의 물리주소에 매핑 -> 페이지 테이블 항목을 삽입해야함
 	struct thread *cur = thread_current();
-	pml4_set_page(cur->pml4, page->va, frame->kva, page->writable);
+	bool psp = pml4_set_page(cur->pml4, page->va, frame->kva, page->writable);
+	if (psp == false)
+		return false;
 
 	return swap_in (page, frame->kva);
 }
