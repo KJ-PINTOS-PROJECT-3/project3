@@ -52,6 +52,7 @@ bool
 vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		vm_initializer *init, void *aux) {
 
+	bool (*type_initializer)(struct page *, enum vm_type, void *);
 	ASSERT (VM_TYPE(type) != VM_UNINIT)
 
 	struct supplemental_page_table *spt = &thread_current ()->spt;
@@ -63,15 +64,15 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 		switch (VM_TYPE(type)){
 			case VM_ANON:
-				uninit_new(page, upage, init, type, aux, anon_initializer);
+				type_initializer = anon_initializer;
 				break;
 			case VM_FILE:
-				uninit_new(page, upage, init, type, aux, file_backed_initializer);
+				type_initializer = file_backed_initializer;
 				break;
 			default:
 				goto err;
 		}
-
+		uninit_new(page, upage, init, type, aux, type_initializer);
 		page->writable = writable;
 		if(!(spt_insert_page(spt, page))){
 			goto err;

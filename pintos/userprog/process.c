@@ -34,7 +34,7 @@ struct fork_struct {
     bool success;
 };
 
-struct aux_file{
+struct aux_load{
     struct file *elf_file;
     off_t page_pos;
     size_t page_read_bytes;
@@ -639,7 +639,7 @@ static bool lazy_load_segment(struct page* page, void* aux) {
     /* TODO: This called when the first page fault occurs on address VA. */
     /* TODO: VA is available when calling this function. */
     if(page == NULL || aux == NULL) return false;
-    struct aux_file *af = (struct aux_file *) aux;
+    struct aux_load *af = (struct aux_load *) aux;
 
     struct file *elf_file = af->elf_file;
     off_t pos = af->page_pos;
@@ -651,7 +651,7 @@ static bool lazy_load_segment(struct page* page, void* aux) {
 
     void *kpage = page->frame->kva;
 
-    /* file_seek 후 file_read 시 그 사이 race condtion 발생 가능 -> read_at으로 변경*/
+    /* file_seek 후 file_read시 그 사이 race condtion 발생 가능 -> read_at으로 변경*/
     lock_acquire(&file_lock);
     off_t bytes_read = file_read_at(elf_file, kpage, page_read_bytes, pos);
     lock_release(&file_lock);
@@ -691,7 +691,7 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
          * and zero the final PAGE_ZERO_BYTES bytes. */
         size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
-        struct aux_file *aux_file = (struct aux_file *)malloc(sizeof(struct aux_file));
+        struct aux_load *aux_file = (struct aux_load *)malloc(sizeof(struct aux_load));
 
         /* TODO : malloc 실패 시 >> 이전 페이지까지의 malloc을 어떻게 처리할까? */
         if (aux_file == NULL) return false;
@@ -720,7 +720,7 @@ static bool setup_stack(struct intr_frame* if_) {
     struct thread *cur = thread_current();
     bool success = false;
 
-    if(vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, true) && vm_claim_page(stack_bottom)){
+    if(vm_alloc_page(VM_ANON | VM_MARKER_STACK, stack_bottom, true) && vm_claim_page(stack_bottom)){
        success = true;
        if_->rsp = USER_STACK;
     }
