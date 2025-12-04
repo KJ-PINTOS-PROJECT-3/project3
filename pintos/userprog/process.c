@@ -500,6 +500,33 @@ static bool validate_segment(const struct Phdr* phdr, struct file* file) {
     return true;
 }
 
+
+static void build_user_stack(struct intr_frame* if_, int argc, char** argv) {
+    char* uargv[argc];
+    for (int i = argc - 1; i >= 0; i--) {
+        int len = strlen(argv[i]) + 1;
+        uargv[i] = (if_->rsp -= len);
+        memcpy(if_->rsp, argv[i], len);
+    }
+
+    // paading
+    char* temp = if_->rsp;
+    if_->rsp &= ~0xF;
+    if (temp - if_->rsp > 0) memset(if_->rsp, 0, temp - if_->rsp);
+
+    // null
+    *(char**)(if_->rsp -= 8) = 0;
+
+    // argv pointer
+    if_->rsp -= argc * sizeof(char*);
+    memcpy((void*)if_->rsp, uargv, argc * sizeof(char*));
+
+    if_->R.rdi = argc;
+    if_->R.rsi = if_->rsp;
+
+    *(char**)(if_->rsp -= 8) = 0;
+}
+
 #ifndef VM
 /* Codes of this block will be ONLY USED DURING project 2.
  * If you want to implement the function for whole project 2, implement it
@@ -549,7 +576,6 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
 
         /* Add the page to the process's address space. */
         if (!install_page(upage, kpage, writable)) {
-            printf("fail\n");
             palloc_free_page(kpage);
             return false;
         }
@@ -578,31 +604,6 @@ static bool setup_stack(struct intr_frame* if_) {
     return success;
 }
 
-static void build_user_stack(struct intr_frame* if_, int argc, char** argv) {
-    char* uargv[argc];
-    for (int i = argc - 1; i >= 0; i--) {
-        int len = strlen(argv[i]) + 1;
-        uargv[i] = (if_->rsp -= len);
-        memcpy(if_->rsp, argv[i], len);
-    }
-
-    // paading
-    char* temp = if_->rsp;
-    if_->rsp &= ~0xF;
-    if (temp - if_->rsp > 0) memset(if_->rsp, 0, temp - if_->rsp);
-
-    // null
-    *(char**)(if_->rsp -= 8) = 0;
-
-    // argv pointer
-    if_->rsp -= argc * sizeof(char*);
-    memcpy((void*)if_->rsp, uargv, argc * sizeof(char*));
-
-    if_->R.rdi = argc;
-    if_->R.rsi = if_->rsp;
-
-    *(char**)(if_->rsp -= 8) = 0;
-}
 
 /* Adds a mapping from user virtual address UPAGE to kernel
  * virtual address KPAGE to the page table.
@@ -630,6 +631,20 @@ static bool lazy_load_segment(struct page* page, void* aux) {
     /* TODO: Load the segment from the file */
     /* TODO: This called when the first page fault occurs on address VA. */
     /* TODO: VA is available when calling this function. */
+    if (!page || !aux)
+        return false;
+
+    struct lazyload_wrapper     *wrapper = (struct lazyload_wrapper *)aux;
+    void                        *kva = page->frame->kva;
+    
+    file_seek(wrapper->file, wrapper->ofs);
+    if (file_read(wrapper->file, kva, wrapper->read_bytes) != (int)wrapper->read_bytes)
+    {
+        palloc_free_page(kva);
+        return false;
+    }
+    memset(kva + wrapper->read_bytes, 0, wrapper->zero_bytes);
+    return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -648,9 +663,15 @@ static bool lazy_load_segment(struct page* page, void* aux) {
  * or disk read error occurs. */
 static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t read_bytes,
                          uint32_t zero_bytes, bool writable) {
+    
+    void                        *aux = NULL;
+    struct lazyload_wrapper    *wrapper;
+
     ASSERT((read_bytes + zero_bytes) % PGSIZE == 0);
     ASSERT(pg_ofs(upage) == 0);
     ASSERT(ofs % PGSIZE == 0);
+
+    off_t   file_offset = ofs;
 
     while (read_bytes > 0 || zero_bytes > 0) {
         /* Do calculate how to fill this page.
@@ -660,14 +681,28 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
         /* TODO: Set up aux to pass information to the lazy_load_segment. */
-        void* aux = NULL;
-        if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, aux))
+        wrapper = (struct lazyload_wrapper *)malloc(sizeof (struct lazyload_wrapper));
+        if (!wrapper)
             return false;
+        *wrapper = (struct lazyload_wrapper){
+            .file = file,
+            .ofs = file_offset,
+            .read_bytes = page_read_bytes,
+            .zero_bytes = page_zero_bytes
+        };
+        aux = wrapper;
+
+        if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, aux))
+        {
+            free (wrapper);
+            return false;
+        }
 
         /* Advance. */
         read_bytes -= page_read_bytes;
         zero_bytes -= page_zero_bytes;
         upage += PGSIZE;
+        file_offset += PGSIZE;
     }
     return true;
 }
@@ -681,6 +716,15 @@ static bool setup_stack(struct intr_frame* if_) {
      * TODO: If success, set the rsp accordingly.
      * TODO: You should mark the page is stack. */
     /* TODO: Your code goes here */
+
+    if (!vm_alloc_page_with_initializer((VM_ANON | VM_MARKER_STACK), stack_bottom, true, NULL, NULL))
+        success = false;
+    else
+    {
+        vm_claim_page(stack_bottom);
+        if_->rsp = USER_STACK;
+        success = true;
+    }
 
     return success;
 }

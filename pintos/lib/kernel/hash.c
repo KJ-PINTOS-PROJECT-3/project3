@@ -252,6 +252,7 @@ hash_bytes (const void *buf_, size_t size) {
 	while (size-- > 0)
 		hash = (hash * FNV_64_PRIME) ^ *buf++;
 
+	
 	return hash;
 }
 

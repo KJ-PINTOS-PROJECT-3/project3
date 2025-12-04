@@ -1,6 +1,7 @@
 #ifndef VM_VM_H
 #define VM_VM_H
 #include <stdbool.h>
+#include <string.h>
 #include "threads/palloc.h"
 
 enum vm_type {
@@ -19,6 +20,7 @@ enum vm_type {
 	 * markers, until the value is fit in the int. */
 	VM_MARKER_0 = (1 << 3),
 	VM_MARKER_1 = (1 << 4),
+	VM_MARKER_STACK = (1 << 5),
 
 	/* DO NOT EXCEED THIS VALUE. */
 	VM_MARKER_END = (1 << 31),
@@ -90,7 +92,6 @@ struct page_operations {
 
 struct supplemental_page_table {
 	struct hash	hash_table;
-	struct lock	hash_lock;
 };
 
 #include "threads/thread.h"

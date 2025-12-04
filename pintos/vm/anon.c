@@ -21,16 +21,30 @@ static const struct page_operations anon_ops = {
 void
 vm_anon_init (void) {
 	/* TODO: Set up the swap_disk. */
-	swap_disk = NULL;
+	swap_disk = disk_get(1, 1);
+	if (!swap_disk)
+		PANIC ("1:1 not present, swap system initialization failed");
+
 }
 
 /* Initialize the file mapping */
 bool
 anon_initializer (struct page *page, enum vm_type type, void *kva) {
-	/* Set up the handler */
+	struct anon_page *anon_page;
+	
+	if (!page || !kva)
+		return false;
+
 	page->operations = &anon_ops;
 
-	struct anon_page *anon_page = &page->anon;
+	anon_page = &page->anon;
+	// *anon_page = (struct anon_page) {
+	// 	.type = type,
+	// 	.swap_slot = -1,
+
+	// };
+
+	return true;
 }
 
 /* Swap in the page by read contents from the swap disk. */
