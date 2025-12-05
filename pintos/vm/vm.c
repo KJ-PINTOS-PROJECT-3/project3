@@ -44,6 +44,7 @@ static struct frame *vm_evict_frame (void);
 /* Hash table Helpers*/
 static uint64_t page_hash(const struct hash_elem *p_, void *aux UNUSED);
 static bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
+static void page_destroy(struct hash_elem *element, void *aux UNUSED);
 
 /* SPT COPY Helpers*/
 static bool copy_anon_page(struct supplemental_page_table *dst, struct page *src_page);
@@ -66,7 +67,9 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 	if (spt_find_page (spt, upage) == NULL) {
 		page = (struct page *)malloc(sizeof(struct page));
-		if(page == NULL) goto err;
+		if(page == NULL) {
+			goto err;
+		}
 
 		switch (VM_TYPE(type)){
 			case VM_ANON:
@@ -306,7 +309,6 @@ static bool copy_anon_page(struct supplemental_page_table *dst, struct page *src
 		return true;
 	
 	if(!vm_claim_page(src_page->va)){
-		/* TODO : page를 다시 free? */
 		return false;		
 	}
 
@@ -326,24 +328,38 @@ static bool copy_uninit_page(struct page *src_page){
 			dst_aux_load = (struct aux_load *)malloc(sizeof(struct aux_load));
 			if(dst_aux_load == NULL) return false;
 			*dst_aux_load = *src_aux_load;
-
-			if(src_aux_load->elf_file != NULL){
-				struct file *dst_file = file_duplicate(src_aux_load->elf_file);
-				if(dst_file == NULL) return false; /* goto문으로 전환 */
-				dst_aux_load->elf_file = dst_file;
-			}
+			dst_aux_load->elf_file = thread_current()->current_file;
 		} 
-	} 
+	} else if(uninit->type == VM_FILE){
+		printf("TODO Implement MMAP");
+		return false;
+	} else {
+		return false;
+	}
+
 	if(!vm_alloc_page_with_initializer(uninit->type, src_page->va, src_page->writable, 
-		uninit->init, dst_aux_load)) return false;
+		uninit->init, dst_aux_load)) {
+		    free(dst_aux_load);
+			return false;
+	}
+	
+	return true;
 }
 
 /* Free the resource hold by the supplemental page table */
 void
-supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	hash_destroy(&spt->hs_table, page_destroy);
 }
+
+static void page_destroy(struct hash_elem *element, void *aux UNUSED){
+	struct page *rm_page = hash_entry(element, struct page, hs_elem); 
+	if(rm_page == NULL) return;
+	vm_dealloc_page(rm_page);
+}
+
 
 
 static uint64_t 

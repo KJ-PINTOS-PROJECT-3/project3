@@ -161,6 +161,9 @@ static void __do_fork(void* aux) {
     if (current->pml4 == NULL) goto error;
 
     process_activate(current);
+
+    if (parent->current_file)
+		current->current_file = file_duplicate(parent->current_file);
 #ifdef VM
     supplemental_page_table_init(&current->spt);
     if (!supplemental_page_table_copy(&current->spt, &parent->spt)) goto error;
@@ -207,6 +210,7 @@ int process_exec(void* f_name) {
 
     /* We first kill the current context */
     process_cleanup();
+    supplemental_page_table_init(&thread_current()->spt);
 
     /* And then load the binary */
     success = load(file_name, argc, argv, &_if);
@@ -255,13 +259,6 @@ void process_exit(void) {
 
     if (cur->pml4 == NULL) return;
     printf("%s: exit(%d)\n", cur->name, cur->my_entry->exit_status);
-    if (cur->current_file) {
-        file_allow_write(cur->current_file);
-        lock_acquire(&file_lock);
-        file_close(cur->current_file);
-        lock_release(&file_lock);
-        cur->current_file = NULL;
-    }
     fdt_list_cleanup(cur);
     process_cleanup();
     sema_up(&cur->my_entry->wait_sema);
@@ -270,6 +267,12 @@ void process_exit(void) {
 /* Free the current process's resources. */
 static void process_cleanup(void) {
     struct thread* curr = thread_current();
+    if (curr->current_file) {
+        lock_acquire(&file_lock);
+        file_close(curr->current_file);
+        lock_release(&file_lock);
+        curr->current_file = NULL;
+    }
 #ifdef VM
     supplemental_page_table_kill(&curr->spt);
 #endif
