@@ -63,6 +63,13 @@ struct page {
 	};
 };
 
+struct aux_load{
+    struct file *elf_file;
+    off_t page_pos;
+    size_t page_read_bytes;
+    size_t page_zero_bytes;
+};
+
 /* The representation of "frame" */
 struct frame {
 	void *kva;

@@ -6,7 +6,7 @@
 #include "threads/vaddr.h"
 #include <hash.h>
 #include "threads/mmu.h"
-
+#include <string.h>
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -261,14 +261,52 @@ supplemental_page_table_init (struct supplemental_page_table *spt) {
 }
 
 /* Copy supplemental page table from src to dst */
-bool
-supplemental_page_table_copy (struct supplemental_page_table *dst,
-		struct supplemental_page_table *src) {
+// src(부모 프로세스의 spt)의 supplemental page table을 dst(자식 프로세스의 spt)로 복사
+bool supplemental_page_table_copy (struct supplemental_page_table *dst, struct supplemental_page_table *src) {
+	if (dst == NULL || src == NULL)
+		return false;
+
+	struct hash_iterator hi;
+	hash_first(&hi, &src->hs_table);
+
+	while(hash_next(&hi)) {
+		struct page *parent_page = hash_entry(hash_cur(&hi), struct page, hs_elem);
+		void *va = parent_page->va;
+		bool writable = parent_page->writable;
+		enum vm_type type = parent_page->operations->type;
+
+		if (type == VM_UNINIT) {
+			vm_initializer *vi = parent_page->uninit.init;
+			struct aux_load *src_aux = parent_page->uninit.aux;
+			struct aux_load *dst_aux = malloc(sizeof(struct aux_load));
+
+			struct file *src_file = src_aux->elf_file;
+			if (dst_aux == NULL)
+				return false;
+
+			memcpy(dst_aux, src_aux, sizeof(struct aux_load));
+			dst_aux->elf_file = file_reopen(src_file);
+
+			bool vapwi = vm_alloc_page_with_initializer(parent_page->uninit.type, va, writable, vi, dst_aux);
+			if (vapwi == false)
+				return false;
+		} else {
+			bool vap = vm_alloc_page(parent_page->uninit.type, va, writable);
+			bool vcp = vm_claim_page(va);
+
+			struct page *child_page = spt_find_page(dst, va);
+			if (vap == false || vcp == false || child_page == NULL) {
+				return false;
+			}
+
+			memcpy(child_page->frame->kva, parent_page->frame->kva, PGSIZE);
+		}
+	}
+	return true;
 }
 
 /* Free the resource hold by the supplemental page table */
-void
-supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
+void supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
 }
