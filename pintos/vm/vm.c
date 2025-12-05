@@ -43,6 +43,7 @@ static struct frame *vm_evict_frame (void);
 /* Hash table Helpers*/
 static uint64_t page_hash(const struct hash_elem *p_, void *aux UNUSED);
 static bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
+static void page_action(struct hash_elem *e, void *aux);
 
 
 /* Create the pending page object with initializer. If you want to create a
@@ -309,8 +310,26 @@ bool supplemental_page_table_copy (struct supplemental_page_table *dst, struct s
 void supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	// 스레드가 보유하고 있는 모든 supplemental page table 항목을 destroy
+	// page가 dirty인 모든 내용을 적절한 저장소에 기록
+	if (spt == NULL)
+		return;
+	// struct hash_iterator hi;
+	// hash_first(&hi, &spt);
+	
+	// while (hash_next(&hi)) {
+	// 	struct page *page = hash_entry(hash_cur(&hi), struct page, hs_elem);
+
+	// }
+
+	hash_clear(&spt->hs_table, page_action);
 }
 
+static void page_action(struct hash_elem *e, void *aux) {
+	const struct page *p = hash_entry(e, struct page, hs_elem);
+
+	vm_dealloc_page(p);
+}
 
 static uint64_t 
 page_hash(const struct hash_elem *p_, void *aux UNUSED){
