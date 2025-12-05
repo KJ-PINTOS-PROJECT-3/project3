@@ -51,8 +51,6 @@ uninit_initialize (struct page *page, void *kva) {
 	vm_initializer *init = uninit->init;
 	void *aux = uninit->aux;
 
-	/* TODO: You may need to fix this function. */
-	/* uninit 정보 백업????? */
 	return uninit->page_initializer (page, uninit->type, kva) &&
 		(init ? init (page, aux) : true);
 }
@@ -63,8 +61,74 @@ uninit_initialize (struct page *page, void *kva) {
  * PAGE will be freed by the caller. */
 static void
 uninit_destroy (struct page *page) {
-	struct uninit_page *uninit UNUSED = &page->uninit;
+	struct uninit_page *uninit = &page->uninit;
 	/* TODO: Fill this function.
 	 * TODO: If you don't have anything to do, just return. */
 	/* TODO : lazy_loading 안했으면 aux 제거하기 */
+
+	
+}
+
+bool
+uninit_aux_load_copy(struct page *dst_page) {
+	struct uninit_page		uninit;
+	struct uninit_aux		*aux;
+	struct uninit_aux_load	*aux_load;
+	struct file				*current_file_copy = NULL;
+
+	uninit = dst_page->uninit;
+	aux = (struct uninit_aux *)uninit.aux;
+	current_file_copy = thread_current()->current_file;
+
+	if (!current_file_copy)
+	{
+		current_file_copy = file_duplicate(aux->aux_load.elf_file);
+		if (!current_file_copy)
+			return false;
+		aux->aux_load.elf_file = current_file_copy;
+		thread_current()->current_file = current_file_copy;
+		file_deny_write(current_file_copy);
+	}
+	
+	aux->aux_load.elf_file = current_file_copy;
+
+	return true;
+}
+
+bool
+uninit_aux_file_copy(struct page *dst_page) {
+	return true;
+}
+
+bool
+uninit_aux_anon_copy(struct page *dst_page) {
+	return true;
+}
+
+bool
+uninit_copy(struct page *dst_page) {
+	struct uninit_page		uninit;
+	enum uninit_aux_type	aux_type;
+	struct uninit_aux		*aux;
+
+	if (!dst_page) return false;
+
+	uninit = dst_page->uninit;
+	aux = (struct uninit_aux *)uninit.aux;
+	aux_type = aux->type;
+
+	switch (aux_type)
+	{
+		case UNINIT_AUX_LOAD:
+			if (false == uninit_aux_load_copy(dst_page)) return false;
+			break ;
+		case UNINIT_AUX_FILE:
+			if (false == uninit_aux_file_copy(dst_page)) return false;
+			break ;
+		case UNINIT_AUX_ANON:
+			if (false == uninit_aux_anon_copy(dst_page)) return false;
+			break ;	
+	}
+
+	return true;
 }

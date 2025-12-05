@@ -25,6 +25,7 @@
 #include "userprog/tss.h"
 #ifdef VM
 #include "vm/vm.h"
+#include "vm/uninit.h"
 #endif
 
 struct fork_struct {
@@ -32,13 +33,6 @@ struct fork_struct {
     struct intr_frame* if_;
     struct semaphore fork_sema;
     bool success;
-};
-
-struct aux_load{
-    struct file *elf_file;
-    off_t page_pos;
-    size_t page_read_bytes;
-    size_t page_zero_bytes;
 };
 
 static void process_cleanup(void);
@@ -638,22 +632,23 @@ static bool lazy_load_segment(struct page* page, void* aux) {
     /* TODO: Load the segment from the file */
     /* TODO: This called when the first page fault occurs on address VA. */
     /* TODO: VA is available when calling this function. */
-    if(page == NULL || aux == NULL) return false;
-    struct aux_load *af = (struct aux_load *) aux;
-
-    struct file *elf_file = af->elf_file;
-    off_t pos = af->page_pos;
-    size_t page_read_bytes = af->page_read_bytes;
-    size_t page_zero_bytes = af->page_zero_bytes;
+    if(!page || !aux) return false;
+    struct uninit_aux_load  *af = &(((struct uninit_aux *) aux)->aux_load);
+    struct file             *elf_file = af->elf_file;
+    off_t                   pos = af->page_pos;
+    size_t                  page_read_bytes = af->page_read_bytes;
+    size_t                  page_zero_bytes = af->page_zero_bytes;
+    void                    *kpage;
+    off_t                   bytes_read;
     
     /* 선제적으로 free 처리(aux는 VM_ANON -> 로드 이후 더 이상 쓸 일이 없음) */
     free(aux);
 
-    void *kpage = page->frame->kva;
+    kpage = page->frame->kva;
 
     /* file_seek 후 file_read시 그 사이 race condtion 발생 가능 -> read_at으로 변경*/
     lock_acquire(&file_lock);
-    off_t bytes_read = file_read_at(elf_file, kpage, page_read_bytes, pos);
+    bytes_read = file_read_at(elf_file, kpage, page_read_bytes, pos);
     lock_release(&file_lock);
 
     /* 해제의 책임은 상위 함수(vm_do_claim_page)로 위임하기 */
@@ -683,24 +678,34 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
     ASSERT((read_bytes + zero_bytes) % PGSIZE == 0);
     ASSERT(pg_ofs(upage) == 0);
     ASSERT(ofs % PGSIZE == 0);
-    off_t page_offset = ofs;
+    
+    size_t              page_read_bytes;
+    size_t              page_zero_bytes;
+    off_t               page_offset = ofs;
+    void                *aux = NULL;
+    struct uninit_aux   *aux_file = NULL;
 
     while (read_bytes > 0 || zero_bytes > 0) {
         /* Do calculate how to fill this page.
          * We will read PAGE_READ_BYTES bytes from FILE
          * and zero the final PAGE_ZERO_BYTES bytes. */
-        size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-        size_t page_zero_bytes = PGSIZE - page_read_bytes;
-        struct aux_load *aux_file = (struct aux_load *)malloc(sizeof(struct aux_load));
-
+        page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+        page_zero_bytes = PGSIZE - page_read_bytes;
+        aux_file = (struct uninit_aux *)malloc(sizeof(struct uninit_aux));
         /* TODO : malloc 실패 시 >> 이전 페이지까지의 malloc을 어떻게 처리할까? */
-        if (aux_file == NULL) return false;
-        aux_file->elf_file = file;
-        aux_file->page_pos = page_offset;
-        aux_file->page_read_bytes = page_read_bytes;
-        aux_file->page_zero_bytes = page_zero_bytes; 
+        if (!aux_file) return false;
+
+        *aux_file = (struct uninit_aux) {
+            .type = UNINIT_AUX_LOAD,
+            .aux_load = (struct uninit_aux_load) {
+                .elf_file = file,
+                .page_pos = page_offset,
+                .page_read_bytes = page_read_bytes,
+                .page_zero_bytes = page_zero_bytes,
+            }
+        };
         
-        void* aux = aux_file;
+        aux = aux_file;
         if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, aux)){
             free(aux_file);
             return false;
@@ -716,9 +721,10 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
 }
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
 static bool setup_stack(struct intr_frame* if_) {
-    void* stack_bottom = (void*)(((uint8_t*)USER_STACK) - PGSIZE);
-    struct thread *cur = thread_current();
-    bool success = false;
+    void            *stack_bottom = (void*)(((uint8_t*)USER_STACK) - PGSIZE);
+    struct thread   *cur = thread_current();
+    bool            success = false;
+    struct page     *page;
 
     if(vm_alloc_page(VM_ANON | VM_MARKER_STACK, stack_bottom, true) && vm_claim_page(stack_bottom)){
        success = true;
@@ -726,8 +732,8 @@ static bool setup_stack(struct intr_frame* if_) {
     }
 
     if(!success){
-        struct page *page = spt_find_page(&cur->spt, stack_bottom);
-        if(page != NULL) spt_remove_page(&cur->spt, page);
+        page = spt_find_page(&cur->spt, stack_bottom);
+        if(!page) spt_remove_page(&cur->spt, page);
     }
 
     return success;

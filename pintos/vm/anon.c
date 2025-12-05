@@ -51,3 +51,8 @@ static void
 anon_destroy (struct page *page) {
 	struct anon_page *anon_page = &page->anon;
 }
+
+bool
+anon_copy (struct page *dst_page) {
+	if (!dst_page) return false;
+}
