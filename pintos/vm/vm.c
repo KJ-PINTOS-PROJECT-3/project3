@@ -6,6 +6,7 @@
 #include "threads/vaddr.h"
 #include <hash.h>
 #include "threads/mmu.h"
+#include <string.h>
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -43,6 +44,11 @@ static struct frame *vm_evict_frame (void);
 /* Hash table Helpers*/
 static uint64_t page_hash(const struct hash_elem *p_, void *aux UNUSED);
 static bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
+
+/* SPT COPY Helpers*/
+static bool copy_anon_page(struct supplemental_page_table *dst, struct page *src_page);
+static bool copy_uninit_page(struct page *src_page);
+
 
 
 /* Create the pending page object with initializer. If you want to create a
@@ -264,6 +270,72 @@ supplemental_page_table_init (struct supplemental_page_table *spt) {
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst,
 		struct supplemental_page_table *src) {
+	
+	struct hash_iterator i;
+	struct page *src_page;
+	enum vm_type init_vm_type;
+
+	hash_first(&i, &src->hs_table);
+	while(hash_next(&i)){
+		src_page = hash_entry(hash_cur(&i), struct page, hs_elem);
+		init_vm_type = src_page->operations->type;
+
+		switch (init_vm_type){
+		case VM_ANON:
+		    if(!copy_anon_page(dst, src_page))
+				return false;
+			break;
+		
+		case VM_UNINIT:
+			if(!copy_uninit_page(src_page))
+				return false;
+			break;
+
+		default:
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool copy_anon_page(struct supplemental_page_table *dst, struct page *src_page){
+	if(!vm_alloc_page(VM_ANON, src_page->va, src_page->writable))
+		return false;
+
+	if(src_page->frame == NULL) 
+		return true;
+	
+	if(!vm_claim_page(src_page->va)){
+		/* TODO : page를 다시 free? */
+		return false;		
+	}
+
+	struct page *dst_page = spt_find_page(dst, src_page->va);
+	if(dst_page == NULL) return false;
+	memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+	return true;
+}
+
+static bool copy_uninit_page(struct page *src_page){
+	struct uninit_page *uninit = &src_page->uninit;
+	struct aux_load *dst_aux_load = NULL;
+
+	if(uninit->type == VM_ANON){
+		struct aux_load *src_aux_load = uninit->aux;
+		if(src_aux_load != NULL){
+			dst_aux_load = (struct aux_load *)malloc(sizeof(struct aux_load));
+			if(dst_aux_load == NULL) return false;
+			*dst_aux_load = *src_aux_load;
+
+			if(src_aux_load->elf_file != NULL){
+				struct file *dst_file = file_duplicate(src_aux_load->elf_file);
+				if(dst_file == NULL) return false; /* goto문으로 전환 */
+				dst_aux_load->elf_file = dst_file;
+			}
+		} 
+	} 
+	if(!vm_alloc_page_with_initializer(uninit->type, src_page->va, src_page->writable, 
+		uninit->init, dst_aux_load)) return false;
 }
 
 /* Free the resource hold by the supplemental page table */

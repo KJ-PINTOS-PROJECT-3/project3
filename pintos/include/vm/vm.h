@@ -80,6 +80,13 @@ struct page_operations {
 	enum vm_type type;
 };
 
+struct aux_load{
+    struct file *elf_file;
+    off_t page_pos;
+    size_t page_read_bytes;
+    size_t page_zero_bytes;
+};
+
 #define swap_in(page, v) (page)->operations->swap_in ((page), v)
 #define swap_out(page) (page)->operations->swap_out (page)
 #define destroy(page) \
@@ -95,8 +102,8 @@ struct supplemental_page_table {
 
 #include "threads/thread.h"
 void supplemental_page_table_init (struct supplemental_page_table *spt);
-bool supplemental_page_table_copy (struct supplemental_page_table *dst,
-		struct supplemental_page_table *src);
+bool supplemental_page_table_copy(struct supplemental_page_table *dst,
+                                  struct supplemental_page_table *src);
 void supplemental_page_table_kill (struct supplemental_page_table *spt);
 struct page *spt_find_page (struct supplemental_page_table *spt,
 		void *va);

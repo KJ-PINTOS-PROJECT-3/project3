@@ -34,13 +34,6 @@ struct fork_struct {
     bool success;
 };
 
-struct aux_load{
-    struct file *elf_file;
-    off_t page_pos;
-    size_t page_read_bytes;
-    size_t page_zero_bytes;
-};
-
 static void process_cleanup(void);
 static bool load(const char* file_name, int argc, char** argv, struct intr_frame* if_);
 static void initd(void* f_name);
