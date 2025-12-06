@@ -314,21 +314,26 @@ void supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	// page가 dirty인 모든 내용을 적절한 저장소에 기록
 	if (spt == NULL)
 		return;
-	// struct hash_iterator hi;
-	// hash_first(&hi, &spt);
-	
-	// while (hash_next(&hi)) {
-	// 	struct page *page = hash_entry(hash_cur(&hi), struct page, hs_elem);
 
-	// }
-
+	// destroy로 해시 테이블까지 다 죽일지
+	// clear로 테이블 구조는 남겨 놓을지
+	// 재사용?
 	hash_clear(&spt->hs_table, page_action);
+	// free(&spt->hs_table.buckets);
 }
 
-static void page_action(struct hash_elem *e, void *aux) {
-	const struct page *p = hash_entry(e, struct page, hs_elem);
+static void page_action(struct hash_elem *e, void *aux UNUSED) {
+	struct page *page = hash_entry(e, struct page, hs_elem);
+	struct thread *cur = thread_current();
 
-	vm_dealloc_page(p);
+	// 스왑 고려
+	if (page->frame != NULL) {
+		if (cur->pml4 != NULL) {
+			pml4_clear_page(cur->pml4, page->va);
+		}
+	}
+
+	vm_dealloc_page(page);
 }
 
 static uint64_t 
