@@ -324,14 +324,6 @@ void supplemental_page_table_kill (struct supplemental_page_table *spt) {
 
 static void page_action(struct hash_elem *e, void *aux UNUSED) {
 	struct page *page = hash_entry(e, struct page, hs_elem);
-	struct thread *cur = thread_current();
-
-	// 스왑 고려
-	if (page->frame != NULL) {
-		if (cur->pml4 != NULL) {
-			pml4_clear_page(cur->pml4, page->va);
-		}
-	}
 
 	vm_dealloc_page(page);
 }
