@@ -162,6 +162,12 @@ static void __do_fork(void* aux) {
     if (current->pml4 == NULL) goto error;
 
     process_activate(current);
+    if (parent->current_file)
+    {
+        thread_current()->current_file = file_duplicate(parent->current_file);
+        if (!(thread_current()->current_file))
+            PANIC("current file duplicate failed\n");
+    }
 #ifdef VM
     supplemental_page_table_init(&current->spt);
     if (!supplemental_page_table_copy(&current->spt, &parent->spt)) goto error;
@@ -257,15 +263,7 @@ void process_exit(void) {
 
     if (cur->pml4 == NULL) return;
     printf("%s: exit(%d)\n", cur->name, cur->my_entry->exit_status);
-    if (cur->current_file) {
-        printf("[process_exit] before file_allow_write: %d\n",
-			 get_file_inode_deny_write(cur->current_file));
-        file_allow_write(cur->current_file);
-        lock_acquire(&file_lock);
-        file_close(cur->current_file);
-        lock_release(&file_lock);
-        cur->current_file = NULL;
-    }
+
     fdt_list_cleanup(cur);
     process_cleanup();
     sema_up(&cur->my_entry->wait_sema);
@@ -293,6 +291,13 @@ static void process_cleanup(void) {
         curr->pml4 = NULL;
         pml4_activate(NULL);
         pml4_destroy(pml4);
+    }
+    if (curr->current_file) {
+        lock_acquire(&file_lock);
+        file_allow_write(curr->current_file);
+        file_close(curr->current_file);
+        lock_release(&file_lock);
+        curr->current_file = NULL;
     }
 }
 

@@ -29,6 +29,4 @@ off_t file_tell (struct file *);
 off_t file_length (struct file *);
 
 struct file* file_dup2(struct file* file);
-
-int get_file_inode_deny_write(struct file *file);
 #endif /* filesys/file.h */

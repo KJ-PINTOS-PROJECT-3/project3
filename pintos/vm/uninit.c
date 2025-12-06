@@ -86,21 +86,10 @@ uninit_aux_load_copy(struct supplemental_page_table *dst, struct page *src_page)
 	struct file				*current_file_copy = NULL;
 	struct uninit_aux		*aux = NULL;
 
-	current_file_copy = thread_current()->current_file;
 
+	current_file_copy = thread_current()->current_file;
 	if (!current_file_copy)
-	{
-		lock_acquire(&file_lock);
-		printf("[uninit_aux_load_copy] before file_duplicate: %d\n",
-			 get_file_inode_deny_write(((struct uninit_aux *)(src_page->uninit.aux))->aux_load.elf_file));
-		current_file_copy = file_duplicate(((struct uninit_aux *)(src_page->uninit.aux))->aux_load.elf_file);
-		if (!current_file_copy)
-			return false;
-		lock_release(&file_lock);
-		thread_current()->current_file = current_file_copy;
-		printf("[uninit_aux_load_copy] after file_duplicate: %d\n",
-			 get_file_inode_deny_write(((struct uninit_aux *)(src_page->uninit.aux))->aux_load.elf_file));
-	}
+		printf("no current file\n");
 
 	aux = (struct uninit_aux *)calloc(1, sizeof(struct uninit_aux));
 	if (!aux) return false;

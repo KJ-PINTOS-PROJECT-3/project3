@@ -11,13 +11,6 @@ struct file {
 	int ref_cnt;       
 };
 
-int get_file_inode_deny_write(struct file *file)
-{
-	if (!file)
-		return -1;
-	return (get_inode_deny_write_cnt(file->inode));
-}
-
 /* Opens a file for the given INODE, of which it takes ownership,
  * and returns the new file.  Returns a null pointer if an
  * allocation fails or if INODE is null. */

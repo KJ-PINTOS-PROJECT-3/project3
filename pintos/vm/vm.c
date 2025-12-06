@@ -293,7 +293,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 				{
 					return false;
 				}
-				break ;
+				break ;	
 			case VM_ANON:
 				if (false == anon_copy(dst, src_page))
 				{
