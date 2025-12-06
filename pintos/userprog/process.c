@@ -264,6 +264,7 @@ void process_exit(void) {
     }
     fdt_list_cleanup(cur);
     process_cleanup();
+    hash_destroy(&cur->spt.hs_table, NULL);
     sema_up(&cur->my_entry->wait_sema);
 }
 
