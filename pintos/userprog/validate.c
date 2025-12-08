@@ -11,6 +11,16 @@ bool valid_address(const void* uaddr, bool write) {
     return (write ? put_user(uaddr, 0) : get_user(uaddr)) != -1;
 }
 
+bool check_buffer(void *buffer, unsigned size, bool write){
+    char *ptr = (char *)buffer;
+    for(unsigned i = 0; i < size; i += PGSIZE){
+        if(!valid_address(ptr + i, write)) return false;
+    }
+    if(!valid_address(ptr + size - 1, write)) return false;
+    return true;
+}
+
+
 static int64_t get_user(const uint8_t* uaddr) {
     int64_t result;
     __asm __volatile(

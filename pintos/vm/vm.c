@@ -174,7 +174,7 @@ vm_get_frame (void) {
 static void
 vm_stack_growth (void *addr) {
 	uintptr_t pg_align_addr = (uintptr_t)pg_round_down(addr);
-	while(true){
+	while(pg_align_addr < (uintptr_t) USER_STACK){
 		if(!vm_alloc_page(VM_ANON | VM_MARKER_STACK, pg_align_addr, true))
 			break;
 		pg_align_addr += PGSIZE;

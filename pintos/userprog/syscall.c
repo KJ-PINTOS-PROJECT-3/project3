@@ -189,7 +189,7 @@ static int syscall_read(int fd, void* buffer, unsigned size) {
     int result;
     if (size == 0) return 0;
 
-    if (!valid_address(buffer, true) || !valid_address(buffer + size - 1, true)) syscall_exit(-1);
+    if (!check_buffer((void *)buffer, size, true)) syscall_exit(-1);
     entry = get_fd_entry(thread_current(), fd);
     if (!entry || entry == stdout_entry) return -1;
 
@@ -208,7 +208,7 @@ static int syscall_write(int fd, const void* buffer, unsigned size) {
     struct file* entry;
     int result;
 
-    if (!valid_address(buffer, false) || !valid_address(buffer + size - 1, false)) syscall_exit(-1);
+    if (!check_buffer((void *)buffer, size, false)) syscall_exit(-1);
     entry = get_fd_entry(thread_current(), fd);
     if (!entry || entry == stdin_entry) return -1;
 
