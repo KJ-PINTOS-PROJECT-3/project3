@@ -169,7 +169,10 @@ vm_get_frame (void) {
 
 /* Growing the stack. */
 static void
-vm_stack_growth (void *addr UNUSED) {
+vm_stack_growth (void *addr) {
+	void *new_addr = pg_round_down(addr);
+
+	vm_alloc_page(VM_ANON, new_addr, true);
 }
 
 /* Handle the fault on write_protected page */
@@ -187,11 +190,20 @@ vm_try_handle_fault (struct intr_frame *f, void *addr, bool user,
 	if(is_kernel_vaddr(addr) || !addr) return false;
 
 	page = spt_find_page(spt, addr);
-	if(!page) return false;
+	if(!page) {
+		uintptr_t rsp = user ? (f->rsp) : (thread_current()->rsp);
 
-	if(write && !(page->writable)) return false;
-
-	return vm_do_claim_page (page);
+		if(addr <= USER_STACK && addr >= USER_STACK - (1 << 20) && addr >= (rsp - 8)) {
+			vm_stack_growth(addr);
+			page = spt_find_page(spt, addr);
+			return vm_do_claim_page (page);
+		}
+		return false;
+	} else {
+		if(write && !(page->writable))
+			return false;
+		return vm_do_claim_page (page);
+	}
 }
 
 /* Free the page.
