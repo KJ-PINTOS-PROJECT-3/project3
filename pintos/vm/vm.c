@@ -267,7 +267,7 @@ vm_do_claim_page (struct page *page) {
 		return false;
 	}
 	
-	if(false == swap_in(page, frame ->kva)){
+	if(false == swap_in(page, frame->kva)){
 		pml4_clear_page(t->pml4, page->va);
 		vm_dealloc_frame(frame);
 		return false; 

@@ -115,7 +115,7 @@ uninit_aux_anon_copy(struct supplemental_page_table *dst, struct page *src_page)
 	return true;
 }
 
-bool  uninit_copy(struct supplemental_page_table *dst, struct page *src_page) {
+bool uninit_copy(struct supplemental_page_table *dst, struct page *src_page) {
 	enum uninit_aux_type	aux_type;
 
 	if (!dst || !src_page) return false;  

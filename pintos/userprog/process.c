@@ -657,9 +657,9 @@ static bool lazy_load_segment(struct page* page, void* aux) {
     kpage = page->frame->kva;
 
     /* file_seek 후 file_read시 그 사이 race condtion 발생 가능 -> read_at으로 변경*/
-    lock_acquire(&file_lock);
+    //lock_acquire(&file_lock);
     bytes_read = file_read_at(elf_file, kpage, page_read_bytes, pos);
-    lock_release(&file_lock);
+    //lock_release(&file_lock);
 
     /* 해제의 책임은 상위 함수(vm_do_claim_page)로 위임하기 */
     if (bytes_read != (off_t)page_read_bytes)
