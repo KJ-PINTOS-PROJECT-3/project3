@@ -51,6 +51,9 @@ static void syscall_seek(int fd, unsigned position);
 static unsigned syscall_tell(int fd);
 static void syscall_close(int fd);
 static int syscall_dup2(int oldfd, int newfd);
+static void *syscall_mmap(void *addr, size_t length, int writable, int fd, off_t offset);
+static void syscall_munmap(void *addr);
+
 
 void syscall_init(void) {
     write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48 | ((uint64_t)SEL_KCSEG) << 32);
@@ -65,7 +68,7 @@ void syscall_init(void) {
 
 /* The main system call interface */
 void syscall_handler(struct intr_frame* f) {
-    uint64_t arg1 = f->R.rdi, arg2 = f->R.rsi, arg3 = f->R.rdx;
+    uint64_t arg1 = f->R.rdi, arg2 = f->R.rsi, arg3 = f->R.rdx, arg4 = f->R.r10, arg5 = f->R.r8;
     thread_current()->rsp = f->rsp;
     switch (f->R.rax) {
         case SYS_HALT:
@@ -112,6 +115,12 @@ void syscall_handler(struct intr_frame* f) {
             break;
         case SYS_DUP2:
             f->R.rax = syscall_dup2(arg1, arg2);
+            break;
+        case SYS_MMAP:
+            f->R.rax = syscall_mmap(arg1, arg2, arg3, arg4, arg5);
+            break;
+        case SYS_MUNMAP:
+            syscall_munmap(arg1);
             break;
     }
 }
@@ -260,4 +269,33 @@ static int syscall_dup2(int oldfd, int newfd) {
     int result = fd_dup2(thread_current(), oldfd, newfd);
     lock_release(&file_lock);
     return result;
+}
+
+static void *syscall_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
+    struct thread *cur = thread_current();
+    struct file *file = get_fd_entry(cur, fd);
+
+    if (addr == NULL || pg_ofs (addr) != 0)
+        return NULL;
+
+    if (length == 0)
+        return NULL;
+
+    if (offset % PGSIZE != 0)
+        return NULL;
+
+    if (addr + length < addr)
+        return NULL;
+
+    if (!is_user_vaddr (addr) || is_kernel_vaddr (addr))
+        return NULL;
+
+    if (file == NULL || file == stdin_entry || file == stdout_entry)
+        return NULL;
+
+    return do_mmap(addr, length, writable, file, offset);
+}
+
+static void syscall_munmap(void *addr) {
+    return do_munmap(addr);
 }

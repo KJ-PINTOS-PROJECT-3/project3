@@ -47,6 +47,8 @@ struct page {
 	void *va;              /* Address in terms of user space */
 	struct frame *frame;   /* Back reference for frame */
 
+	size_t page_count;
+
 	/* Your implementation */
 	struct hash_elem hs_elem;
 	bool writable;			/* 쓰기 가능 여부 나타내는 필드(다른 비트와 결합해서 쓸 예정)*/

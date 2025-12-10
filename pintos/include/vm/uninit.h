@@ -23,7 +23,11 @@ struct uninit_aux_load {
 };
 
 struct uninit_aux_file {
-
+	struct file *file;
+	off_t offset;
+	size_t pg_read_bytes;
+	size_t pg_zero_bytes;
+	bool writable;
 };
 
 struct uninit_aux_anon {
