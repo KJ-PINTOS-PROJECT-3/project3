@@ -66,14 +66,14 @@ uninit_initialize (struct page *page, void *kva) {
 static void
 uninit_destroy (struct page *page) {
 	struct uninit_page *uninit = &page->uninit;
-
-	if (page->uninit.aux)
-	{	
-		/* TODO: 누수 가능성 (로드 안된 mmap 파일)*/
+	struct uninit_aux *aux_uninit = page->uninit.aux;
+	if (aux_uninit){		
+		if(aux_uninit->type == UNINIT_AUX_FILE){
+			file_close(aux_uninit->aux_file.file);
+		} 
 		free (page->uninit.aux);
 		page->uninit.aux = NULL;
 	}
-	
 }
 
 bool 

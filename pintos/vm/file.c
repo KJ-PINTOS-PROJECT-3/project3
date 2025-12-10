@@ -70,6 +70,7 @@ static void write_back(struct page *page){
 	off_t pos = page->file.pos;
 
 	file_write_at(target_file, page->frame->kva, read_bytes, pos);
+	//pml4_set_dirty(thread_current()->pml4, page->frame->kva, false);
 }
 
 
@@ -102,12 +103,13 @@ static bool file_load(struct page* page, void* aux){
 	off_t pos = aux_file->page_pos;
 	size_t read_bytes = aux_file->page_read_bytes;
 	size_t zero_bytes = aux_file->page_zero_bytes;
-	//free(aux);
+	void *mmap_base = aux_file->mmap_base;
+	free(aux);
 
 	struct file_page *file_page = &page->file;
 	*file_page = (struct file_page){
 		.mapped_file = mapped_file,
-		.mmap_base = aux_file->mmap_base,
+		.mmap_base = mmap_base,
 		.pos = pos,
 		.read_bytes = read_bytes,
 		.zero_bytes = zero_bytes,

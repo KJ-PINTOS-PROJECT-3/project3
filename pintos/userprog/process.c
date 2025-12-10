@@ -149,7 +149,6 @@ static void __do_fork(void* aux) {
     struct intr_frame if_;
     struct thread* parent = fork_args->t;
     struct thread* current = thread_current();
-    /* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
     struct intr_frame* parent_if = fork_args->if_;
     bool succ = true;
 
@@ -463,10 +462,6 @@ static bool load(const char* file_name, int argc, char** argv, struct intr_frame
     build_user_stack(if_, argc, argv);
     /* Start address. */
     if_->rip = ehdr.e_entry;
-
-    /* TODO: Your code goes here.
-     * TODO: Implement argument passing (see project2/argument_passing.html). */
-
     success = true;
 
 done:
@@ -639,9 +634,6 @@ static bool install_page(void* upage, void* kpage, bool writable) {
  * upper block. */
 
 static bool lazy_load_segment(struct page* page, void* aux) {
-    /* TODO: Load the segment from the file */
-    /* TODO: This called when the first page fault occurs on address VA. */
-    /* TODO: VA is available when calling this function. */
     if(!page || !aux) return false;
     struct uninit_aux_load  *af = &(((struct uninit_aux *) aux)->aux_load);
     struct file             *elf_file = af->elf_file;
