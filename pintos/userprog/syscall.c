@@ -199,6 +199,22 @@ static int syscall_read(int fd, void* buffer, unsigned size) {
     if (size == 0) return 0;
 
     if (!valid_address(buffer, true) || !valid_address(buffer + size - 1, true)) syscall_exit(-1);
+
+    void *addr = pg_round_down(buffer);
+    struct thread *cur = thread_current();
+    
+    while (addr < (buffer + size)) {
+        if (!is_user_vaddr (addr))
+        syscall_exit (-1);
+        
+        struct page *page = spt_find_page (&cur->spt, addr);
+        if (page == NULL)
+            break;
+        if (page->writable == false)
+            syscall_exit (-1);
+
+        addr += PGSIZE;
+    }
     entry = get_fd_entry(thread_current(), fd);
     if (!entry || entry == stdout_entry) return -1;
 
@@ -210,6 +226,7 @@ static int syscall_read(int fd, void* buffer, unsigned size) {
         result = file_read(entry, buffer, size);
     }
     lock_release(&file_lock);
+
     return result;
 }
 
