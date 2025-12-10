@@ -2,12 +2,20 @@
 
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "vm/vm.h"
 
 static int64_t get_user(const uint8_t* uaddr);
 static int64_t put_user(uint8_t* udst, uint8_t byte);
 
 bool valid_address(const void* uaddr, bool write) {
     if (uaddr == NULL || !is_user_vaddr(uaddr)) return false;
+    if (write){
+        struct supplemental_page_table *spt = &thread_current()->spt;
+        struct page *page = spt_find_page(spt, uaddr);
+        if(page && !page->writable){
+            return false;
+        }
+    }
     return (write ? put_user(uaddr, 0) : get_user(uaddr)) != -1;
 }
 

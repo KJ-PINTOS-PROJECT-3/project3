@@ -90,7 +90,7 @@ static bool valid_vma_range(uintptr_t vaild_addr_ptr, size_t valid_length){
 		if(spt_find_page(&cur->spt, vaild_addr_ptr)) return NULL;
 		size_t move_bytes = (PGSIZE < valid_length) ? PGSIZE : valid_length; 
 		vaild_addr_ptr += move_bytes;
-		valid_length -= PGSIZE;
+		valid_length -= move_bytes;
 	}
 	return true;
 }

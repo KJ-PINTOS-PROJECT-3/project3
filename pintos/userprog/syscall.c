@@ -276,8 +276,9 @@ static int syscall_dup2(int oldfd, int newfd) {
 
 static void *syscall_mmap(void *addr, size_t length, int writable, int fd, off_t offset){
     struct file* entry;
-    if(addr == NULL || !is_user_vaddr(addr)) return NULL;
-    if(pg_ofs(addr) != 0 || length == 0 ) return NULL;
+    void *end = addr + length;
+    if(addr == NULL || !is_user_vaddr(addr) || !is_user_vaddr(end) || end == NULL) return NULL;
+    if(pg_ofs(addr) != 0 || length == 0 || pg_ofs(offset) != 0 ) return NULL;
     entry = get_fd_entry(thread_current(), fd);
     if (!entry || entry == stdin_entry || entry == stdout_entry) return NULL;
     return do_mmap(addr, length, writable, entry, offset);
