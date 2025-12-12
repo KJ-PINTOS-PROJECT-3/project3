@@ -23,7 +23,11 @@ struct uninit_aux_load {
 };
 
 struct uninit_aux_file {
-
+	struct file *file;
+    off_t page_pos;
+    size_t page_read_bytes;
+    size_t page_zero_bytes;
+	void *mmap_base;
 };
 
 struct uninit_aux_anon {

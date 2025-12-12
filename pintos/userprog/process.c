@@ -149,7 +149,6 @@ static void __do_fork(void* aux) {
     struct intr_frame if_;
     struct thread* parent = fork_args->t;
     struct thread* current = thread_current();
-    /* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
     struct intr_frame* parent_if = fork_args->if_;
     bool succ = true;
 
@@ -213,7 +212,9 @@ int process_exec(void* f_name) {
 
     /* We first kill the current context */
     process_cleanup();
+#ifdef VM
     supplemental_page_table_init(&(thread_current()->spt));
+#endif
 
     /* And then load the binary */
     success = load(file_name, argc, argv, &_if);
@@ -410,7 +411,7 @@ static bool load(const char* file_name, int argc, char** argv, struct intr_frame
     file_ofs = ehdr.e_phoff;
     for (i = 0; i < ehdr.e_phnum; i++) {
         struct Phdr phdr;
-
+        
         if (file_ofs < 0 || file_ofs > file_length(file)) goto done;
         file_seek(file, file_ofs);
 
@@ -461,10 +462,6 @@ static bool load(const char* file_name, int argc, char** argv, struct intr_frame
     build_user_stack(if_, argc, argv);
     /* Start address. */
     if_->rip = ehdr.e_entry;
-
-    /* TODO: Your code goes here.
-     * TODO: Implement argument passing (see project2/argument_passing.html). */
-
     success = true;
 
 done:
@@ -637,9 +634,6 @@ static bool install_page(void* upage, void* kpage, bool writable) {
  * upper block. */
 
 static bool lazy_load_segment(struct page* page, void* aux) {
-    /* TODO: Load the segment from the file */
-    /* TODO: This called when the first page fault occurs on address VA. */
-    /* TODO: VA is available when calling this function. */
     if(!page || !aux) return false;
     struct uninit_aux_load  *af = &(((struct uninit_aux *) aux)->aux_load);
     struct file             *elf_file = af->elf_file;
@@ -655,9 +649,9 @@ static bool lazy_load_segment(struct page* page, void* aux) {
     kpage = page->frame->kva;
 
     /* file_seek 후 file_read시 그 사이 race condtion 발생 가능 -> read_at으로 변경*/
-    lock_acquire(&file_lock);
+    //lock_acquire(&file_lock);
     bytes_read = file_read_at(elf_file, kpage, page_read_bytes, pos);
-    lock_release(&file_lock);
+    //lock_release(&file_lock);
 
     /* 해제의 책임은 상위 함수(vm_do_claim_page)로 위임하기 */
     if (bytes_read != (off_t)page_read_bytes)

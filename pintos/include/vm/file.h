@@ -7,6 +7,11 @@ struct page;
 enum vm_type;
 
 struct file_page {
+	struct file *mapped_file;
+	void *mmap_base;
+	size_t read_bytes;
+	size_t zero_bytes;
+	off_t pos;
 };
 
 void vm_file_init (void);

@@ -66,16 +66,14 @@ uninit_initialize (struct page *page, void *kva) {
 static void
 uninit_destroy (struct page *page) {
 	struct uninit_page *uninit = &page->uninit;
-	/* TODO: Fill this function.
-	 * TODO: If you don't have anything to do, just return. */
-	/* TODO : lazy_loading 안했으면 aux 제거하기 */
-
-	if (page->uninit.aux)
-	{
+	struct uninit_aux *aux_uninit = page->uninit.aux;
+	if (aux_uninit){		
+		if(aux_uninit->type == UNINIT_AUX_FILE){
+			file_close(aux_uninit->aux_file.file);
+		} 
 		free (page->uninit.aux);
 		page->uninit.aux = NULL;
 	}
-	
 }
 
 bool 
@@ -115,7 +113,7 @@ uninit_aux_anon_copy(struct supplemental_page_table *dst, struct page *src_page)
 	return true;
 }
 
-bool  uninit_copy(struct supplemental_page_table *dst, struct page *src_page) {
+bool uninit_copy(struct supplemental_page_table *dst, struct page *src_page) {
 	enum uninit_aux_type	aux_type;
 
 	if (!dst || !src_page) return false;  

@@ -47,6 +47,9 @@ static uint64_t page_hash(const struct hash_elem *p_, void *aux UNUSED);
 static bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
 void page_destroy(struct hash_elem *e, void *aux UNUSED);
 
+/* Stack growth Helpers*/
+static bool is_valid_stack_access(uintptr_t user_rsp, void *addr);
+
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
  * `vm_alloc_page`. */
@@ -118,8 +121,9 @@ spt_insert_page (struct supplemental_page_table *spt,
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
+	hash_delete(&spt->hs_table, &page->hs_elem);
 	vm_dealloc_page (page);
-	return true;
+	return;
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -169,7 +173,13 @@ vm_get_frame (void) {
 
 /* Growing the stack. */
 static void
-vm_stack_growth (void *addr UNUSED) {
+vm_stack_growth (void *addr) {
+	uintptr_t pg_align_addr = (uintptr_t)pg_round_down(addr);
+	while(pg_align_addr < (uintptr_t) USER_STACK){
+		if(!vm_alloc_page(VM_ANON | VM_MARKER_STACK, pg_align_addr, true))
+			break;
+		pg_align_addr += PGSIZE;
+	}
 }
 
 /* Handle the fault on write_protected page */
@@ -185,13 +195,34 @@ vm_try_handle_fault (struct intr_frame *f, void *addr, bool user,
 	struct page						*page = NULL;
 
 	if(is_kernel_vaddr(addr) || !addr) return false;
+	uintptr_t user_rsp = user ? (f->rsp):(thread_current()->rsp);
 
 	page = spt_find_page(spt, addr);
-	if(!page) return false;
+	if(page){
+		if(write && (!page->writable)) 
+			return false;
+	} else {
+		if(is_valid_stack_access(user_rsp, addr)){
+			vm_stack_growth(addr);
+			page = spt_find_page(spt, addr); /* vm_stack_growth에서 SPT에 다시 등록했기 때문에, 다시 찾아야 함 */
+		} else {
+			return false;
+		}
+	}
+	return vm_do_claim_page(page);
+}
 
-	if(write && !(page->writable)) return false;
+static bool is_valid_stack_access(uintptr_t user_rsp, void *addr){
+	if(addr > USER_STACK)
+		return false;
+	
+	if((uintptr_t)addr < (uintptr_t)USER_STACK - (uintptr_t)USER_STACK_MAX_SIZE)
+	 	return false;
 
-	return vm_do_claim_page (page);
+	if((uintptr_t)addr < user_rsp - 8)
+		return false;
+	
+	return true;
 }
 
 /* Free the page.
@@ -237,7 +268,7 @@ vm_do_claim_page (struct page *page) {
 		return false;
 	}
 	
-	if(false == swap_in(page, frame ->kva)){
+	if(false == swap_in(page, frame->kva)){
 		pml4_clear_page(t->pml4, page->va);
 		vm_dealloc_frame(frame);
 		return false; 
